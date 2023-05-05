@@ -48,7 +48,7 @@ app.post("/expense/:title", async (req, res) => {
     );
     const trans = await Transaction.create({
       name: req.body.expense.label,
-      type: "income",
+      type: "expense",
       value: req.body.expense.amount,
     });
     res.send({ data: budget });
