@@ -4,7 +4,7 @@ const cors = require("cors");
 const app = express();
 const port = 3000;
 const Budget = require("./models.js");
-
+const Transaction = require("./transaction.js");
 app.use(express.json());
 app.use(cors());
 
@@ -22,6 +22,11 @@ app.post("/budget", async (req, res) => {
   try {
     const budget = await Budget.create(req.body);
     res.send(budget);
+    const trans = await Transaction.create({
+      name: "budget",
+      type: "income",
+      value: req.body.amount,
+    });
   } catch (err) {
     console.log(err);
     res.send(err);
@@ -30,26 +35,23 @@ app.post("/budget", async (req, res) => {
 
 //  This is the route for creating a new expense in the budget.
 app.post("/expense/:title", async (req, res) => {
-  // give the budget title in req.body.title and expense in req.body.expense
   try {
-    console.log(req.body);
-
-    const expense = await Budget.find({
-      title: req.params.title,
+    const expense = await Budget.findOneAndUpdate(
+      { title: req.params.title },
+      { $push: { expense: req.body.expense } },
+      { new: true }
+    );
+    const budget = await Budget.findOneAndUpdate(
+      { title: req.body.title },
+      { $inc: { amount: -req.body.expense.amount } },
+      { new: true }
+    );
+    const trans = await Transaction.create({
+      name: req.body.expense.label,
+      type: "income",
+      value: req.body.expense.amount,
     });
-    if (expense.expense.category === req.body.category) {
-      const expense = await Budget.findOneAndUpdate(
-        { title: req.params.title },
-        { $push: { expense: { categories: req.body.amount, req } } },
-        { new: true }
-      );
-    }
-
-    console.log(expense);
-
-    // const budget = await Budget.findOneAndUpdate();
-    // console.log(budget);
-    // res.send({ budget });
+    res.send({ data: budget });
   } catch (err) {
     console.log(err);
   }
@@ -65,6 +67,12 @@ app.put("/budget", async (req, res) => {
       { amount: req.body.amount },
       { new: true }
     );
+
+    const trans = await Transaction.create({
+      name: req.body.label,
+      type: "income",
+      value: req.body.amount,
+    });
     // we can have a check here to see if the new amount is greater than the sum of all expenses
     res.send(budget);
   } catch (err) {
@@ -73,19 +81,23 @@ app.put("/budget", async (req, res) => {
   }
 });
 
-app.patch("/budget", async (req, res) => {
+app.patch("/budget/:title", async (req, res) => {
   /*
   This is the route for updating a budget by adding an income.
   */
   // give the budget title in req.params.title and new income in req.body.income
   try {
     const budget = await Budget.findOneAndUpdate(
-      { title: req.body.label },
+      { title: req.params.title },
       { $inc: { amount: req.body.amount } },
       { new: true }
     );
     console.log({ data: budget });
-
+    const trans = await Transaction.create({
+      name: req.body.label,
+      type: "income",
+      value: req.body.amount,
+    });
     res.send(budget);
   } catch (err) {
     console.log(err);
@@ -121,31 +133,27 @@ app.get("/expense/:title", async (req, res) => {
 });
 
 app.get("/category_expense/:title", async (req, res) => {
-  /*
-  This is the route for getting the unique categories along with the total amount of the category in a budget.
-  */
-  // give the budget title in req.params.title
   try {
     const budget = await Budget.findOne({ title: req.params.title });
     const expense = budget.expense;
-    const category = expense.map((item) => {
-      return item.category.label;
-    });
-    const uniqueCategory = [...new Set(category)];
-    const categoryExpense = uniqueCategory.map((item) => {
-      const expense = budget.expense.filter((expense) => {
-        return expense.category.label === item;
-      });
-      const amount = expense.reduce((acc, curr) => {
-        return acc + curr.expenses[0].amount;
-      }, 0);
-      return { label: item, amount: amount };
-    });
-    res.send({ data: categoryExpense });
+    const category = {};
+    for (let i = 0; i < expense.length; i++) {
+      if (category[expense[i].category]) {
+        category[expense[i].category] += expense[i].amount;
+      } else {
+        category[expense[i].category] = expense[i].amount;
+      }
+    }
+    res.send({ data: category });
   } catch (err) {
     console.log(err);
     res.send(err);
   }
+});
+
+app.get("/transactionList", async (req, res) => {
+  const trans = await Transaction.find({});
+  res.send({ data: trans });
 });
 
 mongoose
